@@ -1,0 +1,12 @@
+# Datos generados
+data/
+logs/
+
+# Archivos y carpetas de Python
+__pycache__/
+*.pyc 
+*.pyo 
+*.pyd
+
+# Archivos extra
+.indice.md
