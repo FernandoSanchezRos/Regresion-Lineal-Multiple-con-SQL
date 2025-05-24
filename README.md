@@ -203,3 +203,124 @@ Este control garantiza que los datos que ingresan en la base son aptos para su a
 ## Validación estructural de la carga
 
 Tras la inserción, se realiza una segunda validación conectando de nuevo a PostgreSQL para comprobar que la tabla contiene el número esperado de registros. Todo este proceso queda registrado mediante un sistema centralizado de `logging`, que genera un archivo `.log` por ejecución, permitiendo rastrear en detalle cualquier anomalía.
+
+---
+
+
+# Cálculo de Regresión Lineal Múltiple en SQL
+
+Este proyecto implementa, paso a paso, una regresión lineal múltiple utilizando únicamente SQL sobre una base de datos PostgreSQL. El objetivo es demostrar cómo puede desarrollarse un flujo completo de análisis predictivo sin salir del lenguaje SQL, lo cual es ideal tanto para consolidar fundamentos matemáticos como para mostrar dominio de SQL avanzado en un contexto realista.
+
+Cada etapa se ejecuta mediante scripts independientes, lo que permite verificar manualmente cada componente del modelo antes de encapsularlo en funciones reutilizables o procedimientos almacenados (`PL/pgSQL`).
+
+---
+
+## 1. Verificación previa de los datos
+
+Antes de ajustar el modelo, se comprueban los supuestos fundamentales para evitar errores silenciosos en las predicciones:
+
+- Detección de nulos y duplicados
+- Cálculo de estadísticas descriptivas (`AVG`, `STDDEV_POP`, etc.)
+- Análisis de correlación entre predictores (`CORR`)
+- Revisión manual de escalado, normalidad y dispersión
+
+## 2. División en train/test
+
+Se realiza un particionado aleatorio de los datos mediante `RANDOM()` para evaluar el modelo en observaciones no vistas:
+
+```sql
+SELECT *, 
+       CASE WHEN RANDOM() < 0.8 THEN 'train' ELSE 'test' END AS conjunto
+FROM datos;
+```
+
+
+## 3. Ajuste del modelo (cálculo de coeficientes)
+
+Se implementa el cálculo de los coeficientes `β` a partir de la fórmula matricial de mínimos cuadrados:
+
+$$
+\beta = (X^TX)^{-1}X^Ty
+$$
+
+En SQL, este cálculo se descompone en:
+
+* Cálculo de medias y varianzas de los predictores
+* Cálculo de covarianzas cruzadas (`COVAR_POP`)
+* Cálculo manual del intercepto `β₀` y los coeficientes `β₁...βₙ`
+
+Los coeficientes se almacenan en una tabla `modelo_coeficientes` para poder ser reutilizados en predicciones posteriores.
+
+## 4. Predicción
+
+Aplicando la ecuación del modelo, se calcula la variable `y_pred` sobre el conjunto de test:
+
+```sql
+SELECT *,
+       beta_0 + beta_1 * edad + beta_2 * nivel_estudios + beta_3 * anos_experiencia AS y_pred
+FROM datos_split
+WHERE conjunto = 'test';
+```
+
+Los resultados se almacenan en una nueva tabla `predicciones`.
+
+## 5. Evaluación del modelo
+
+Se calculan métricas de rendimiento sobre el conjunto de test mediante agregaciones:
+
+* **MAE** (Mean Absolute Error)
+* **RMSE** (Root Mean Squared Error)
+* **R²** (Coeficiente de determinación)
+
+Estas métricas permiten comparar distintos ajustes y detectar posibles sobreajustes.
+
+## 6. Análisis de los residuos
+
+Para validar los supuestos del modelo, se analizan los residuos:
+
+$$
+\text{residuo} = y - \hat{y}
+$$
+
+
+Entre los análisis realizados:
+
+* Comprobación de que la **media ≈ 0**
+* Cálculo de la **desviación estándar**
+* Detección de **outliers residuales** (|residuo| > 3σ)
+* Cálculo del **percentil 95** del error absoluto
+* Evaluación del **rango intercuartílico (IQR)**
+
+Estos indicadores ayudan a comprobar la calidad del ajuste y la estabilidad del modelo.
+
+## 7. Importancia de variables
+
+Se calcula una medida de importancia relativa de cada predictor como:
+
+$$
+\text{impacto}_i = |\beta_i|\cdot std(x_i)
+$$
+
+Esto permite comparar el peso efectivo de cada variable incluso si no están estandarizadas. La variable con mayor impacto se almacena en el resumen final del modelo.
+
+## 8. Registro del modelo
+
+Finalmente, se encapsula todo en un resumen almacenado en la tabla `registro_modelo`, que incluye:
+
+* Fecha de entrenamiento
+* MAE, RMSE, R²
+* Desviación de residuos
+* Percentil 95 del error
+* Variable más influyente
+
+Este paso permite versionar los modelos y hacer seguimiento de su evolución.
+
+## ¿Por qué hacerlo paso a paso?
+
+Este enfoque modular no solo facilita la validación de cada componente del modelo, sino que también permite:
+
+* Detectar errores de cálculo tempranos
+* Justificar cada decisión con evidencia numérica
+* Asegurar interpretabilidad antes de encapsular lógica en funciones SQL o procedimientos almacenados
+
+Una vez validado, el flujo puede compactarse en funciones `PL/pgSQL` para producción o automatización.
