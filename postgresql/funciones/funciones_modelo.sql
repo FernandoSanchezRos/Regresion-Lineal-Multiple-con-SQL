@@ -7,7 +7,7 @@
 -- ========================================
 -- 1. Verificación de Datos
 -- ========================================
-CREATE OR REPLACE FUNCTION verificar_datos(tabla TEXT)
+CREATE OR REPLACE FUNCTION verificar_datos(tabla TEXT, idx TEXT)
 RETURNS VOID AS $$
 DECLARE
     total_registros INT;
@@ -18,6 +18,9 @@ BEGIN
     RAISE NOTICE 'Total de registros de la tabla %: %', tabla, total_registros;
     -- Contar nulos por columna
     PERFORM contar_nulos(tabla);
+    -- Contar duplicados excluyendo ids
+    PERFORM contar_duplicados(tabla, idx);
+
 END;
 $$ LANGUAGE plpgsql;
 
@@ -38,5 +41,23 @@ BEGIN
         EXECUTE sql INTO resultado;
         RAISE NOTICE 'Columna %: % valores nulos', colname, resultado;
     END LOOP;
+END;
+$$ LANGUAGE plpgsql;
+-- Función auxiliar. Contar duplicados sin contar el índice
+CREATE OR REPLACE FUNCTION contar_duplicados(tabla TEXT, idx TEXT)
+RETURNS VOID AS $$
+DECLARE
+    cols TEXT;
+    sql TEXT;
+    resultado INT;
+BEGIN
+    SELECT string_agg(column_name, ', ')
+    INTO cols
+    FROM information_schema.columns
+    WHERE table_name = tabla AND table_schema = 'public' AND column_name <> idx;
+
+    sql := format('SELECT COUNT(*) FROM (SELECT %s FROM %I GROUP BY %s HAVING COUNT(*) > 1) AS sub',cols, tabla, cols);
+    EXECUTE sql INTO resultado;
+    RAISE NOTICE 'La tabla % tiene % duplicados', tabla, resultado;
 END;
 $$ LANGUAGE plpgsql;
